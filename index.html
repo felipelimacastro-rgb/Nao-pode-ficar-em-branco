@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang=\"pt-BR\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\" />
+  <title>Foto-Pedido & NF — PWA</title>
+  <meta name=\"theme-color\" content=\"#0f1115\" />
+  <link rel=\"manifest\" href=\"manifest.webmanifest\">
+  <link rel=\"icon\" href=\"icons/icon-192.png\">
+  <script defer src=\"https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js\"></script>
+  <style>
+    :root{--bg:#0f1115;--panel:#151923;--muted:#8a94a6;--text:#e7ecf3;--accent:#58a6ff;--ok:#2ea043;--warn:#f2cc60;--danger:#f85149}
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,Segoe UI,Roboto; background:var(--bg); color:var(--text)}
+    .wrap{max-width:880px;margin:0 auto;padding:16px}
+    .card{background:var(--panel);border:1px solid #20263a;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.25);padding:16px;margin:12px 0}
+    h1{font-size:22px;margin:8px 0;display:flex;gap:8px;align-items:center} .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+    label{font-size:12px;color:var(--muted);display:block;margin:8px 0 6px}
+    input[type=\"text\"], textarea{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #2a324b;background:#0f1320;color:var(--text);font-size:15px;outline:none}
+    textarea{min-height:84px;resize:vertical}
+    button{appearance:none;border:none;border-radius:14px;padding:12px 14px;font-weight:600;color:#0b1020;background:var(--accent);cursor:pointer}
+    button.ghost{background:#20263a;color:#e7ecf3;border:1px solid #2a324b}
+    .btn-row{display:flex;gap:8px;flex-wrap:wrap}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+    .kv{padding:10px;border-radius:12px;background:#101627;border:1px solid #2a324b}
+    .kv b{display:block;color:#9bb5ff;margin-bottom:6px}
+    .muted{color:var(--muted);font-size:12px}
+    img{max-width:100%;border-radius:12px;border:1px solid #2a324b;background:#0b1020}
+    .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#1a2133;border:1px solid #2a324b;color:#c8d3e6;font-size:12px}
+    .topbar{display:flex;gap:8px;align-items:center;justify-content:space-between}
+  </style>
+</head>
+<body>
+  <div class=\"wrap\">
+    <div class=\"topbar\">
+      <h1>Foto-Pedido & NF — PWA <span id=\"modeChip\" class=\"chip\">Modo: Pedido</span></h1>
+      <button class=\"ghost\" id=\"btnInstall\" style=\"display:none\">Instalar</button>
+    </div>
+    <p class=\"sub\">PWA leve: tirar foto (via seletor/câmera nativa), OCR local (Tesseract.js), extrair dados e enviar para WhatsApp. Funciona offline após a primeira visita.</p>
+
+    <div class=\"card\">
+      <div class=\"btn-row\">
+        <button class=\"ghost\" id=\"btnPedido\">Pedido</button>
+        <button class=\"ghost\" id=\"btnNF\">Nota Fiscal</button>
+      </div>
+      <label>Grupo/Contato do WhatsApp (opcional — só o nome para compor o texto)</label>
+      <input id=\"waTo\" type=\"text\" placeholder=\"Ex.: Compras Benito\" />
+    </div>
+
+    <div class=\"card\">
+      <h2 style=\"font-size:18px;margin:4px 0 8px\">1) Foto</h2>
+      <label>Selecione a foto (ou tire agora)</label>
+      <input id=\"file\" type=\"file\" accept=\"image/*\" capture=\"environment\" />
+      <div id=\"previewBox\" style=\"margin-top:10px\"></div>
+      <div class=\"btn-row\" style=\"margin-top:10px\">
+        <button id=\"btnOCR\">Extrair texto (OCR)</button>
+        <span id=\"ocrStatus\" class=\"muted\"></span>
+      </div>
+    </div>
+
+    <div class=\"card\">
+      <h2 style=\"font-size:18px;margin:4px 0 8px\">2) Texto capturado / manual</h2>
+      <textarea id=\"freeText\" placeholder=\"Cole/edite aqui o texto reconhecido…\"></textarea>
+      <div class=\"btn-row\" style=\"margin-top:10px\">
+        <button class=\"ghost\" id=\"btnParse\">Tentar extrair</button>
+      </div>
+    </div>
+
+    <div class=\"card\">
+      <h2 style=\"font-size:18px;margin:4px 0 8px\">3) Campos</h2>
+      <div id=\"pedidoFields\" class=\"grid\">
+        <div class=\"kv\"><b>Itens (auto)</b><div id=\"pedidoItens\" class=\"muted\">—</div></div>
+        <div class=\"kv\"><b>Observações</b><input id=\"pedidoObs\" type=\"text\" placeholder=\"Ex.: Urgente / fornecedor preferido\"/></div>
+      </div>
+      <div id=\"nfFields\" class=\"grid\" style=\"display:none\">
+        <div class=\"kv\"><b>Fornecedor</b><input id=\"nfFornecedor\" type=\"text\" placeholder=\"Ex.: Distribuidora X\"/></div>
+        <div class=\"kv\"><b>CNPJ</b><input id=\"nfCNPJ\" type=\"text\" placeholder=\"00.000.000/0000-00\"/></div>
+        <div class=\"kv\"><b>Data</b><input id=\"nfData\" type=\"text\" placeholder=\"dd/mm/aaaa\"/></div>
+        <div class=\"kv\"><b>Valor (R$)</b><input id=\"nfValor\" type=\"text\" placeholder=\"Ex.: 1.234,56\"/></div>
+      </div>
+    </div>
+
+    <div class=\"card\">
+      <h2 style=\"font-size:18px;margin:4px 0 8px\">4) Enviar / Exportar</h2>
+      <div class=\"btn-row\">
+        <button id=\"btnWA\">Enviar para WhatsApp</button>
+        <button class=\"ghost\" id=\"btnSaveCSV\">Salvar CSV</button>
+        <button class=\"ghost\" id=\"btnClear\">Limpar</button>
+      </div>
+    </div>
+
+    <p class=\"muted\">v1.0 PWA • Após abrir uma vez com internet (para carregar o OCR), pode usar offline. Para instalar, use o botão “Instalar” ou “Adicionar à tela inicial”.</p>
+  </div>
+
+  <script>
+  // PWA install
+  let deferredPrompt;
+  const installBtn = document.getElementById('btnInstall');
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    installBtn.style.display = 'inline-block';
+  });
+  installBtn.addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    installBtn.style.display = 'none';
+  });
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js');
+    });
+  }
+
+  // App logic
+  let mode='pedido';
+  const el = (q)=>document.querySelector(q);
+  function setMode(m){
+    mode = m;
+    el('#modeChip').textContent = 'Modo: ' + (m==='pedido'?'Pedido':'Nota Fiscal');
+    el('#pedidoFields').style.display = m==='pedido'?'grid':'none';
+    el('#nfFields').style.display = m==='nf'?'grid':'none';
+  }
+  el('#btnPedido').onclick = ()=>setMode('pedido');
+  el('#btnNF').onclick = ()=>setMode('nf');
+
+  el('#file').addEventListener('change', (ev)=>{
+    const f = ev.target.files && ev.target.files[0];
+    if(!f){ el('#previewBox').innerHTML = ''; return; }
+    const url = URL.createObjectURL(f);
+    el('#previewBox').innerHTML = '<img id="preview" alt="preview">';
+    el('#preview').src = url;
+  });
+
+  el('#btnOCR').onclick = async ()=>{
+    const file = el('#file').files && el('#file').files[0];
+    if(!file){ alert('Selecione uma foto primeiro.'); return; }
+    el('#ocrStatus').textContent = 'Processando OCR… (primeira vez pode levar alguns segundos)';
+    try{
+      const img = URL.createObjectURL(file);
+      const worker = await Tesseract.createWorker('por');
+      const { data } = await worker.recognize(img);
+      await worker.terminate();
+      const text = (data.text||'').trim();
+      if(text){
+        el('#freeText').value = (el('#freeText').value ? el('#freeText').value + '\n' : '') + text;
+        el('#ocrStatus').textContent = 'OCR concluído.';
+      }else{
+        el('#ocrStatus').textContent = 'Nada reconhecido.';
+      }
+    }catch(e){
+      console.error(e);
+      el('#ocrStatus').textContent = 'Falha no OCR (verifique conexão para carregar o modelo).';
+    }
+  };
+
+  function parsePedido(text){
+    const lines = text.split(/\n|;/).map(s=>s.trim()).filter(Boolean);
+    const items=[];
+    const rx = /(\d+[\.,]?\d*)\s*(cx|un|kg|g|pc|pct|saco|und|litro|l|ml)?\s*(.*?)(\b\d+[\.,]?\d*\s*(kg|g|l|ml))?/i;
+    for(const L of lines){
+      const m = L.match(rx);
+      if(m){ items.push({ qtd:m[1], um:(m[2]||'un'), item:(m[3]||'').trim(), extra:(m[4]||'').trim() }); }
+      else { items.push({ qtd:'', um:'', item:L, extra:'' }); }
+    }
+    return items;
+  }
+  function parseNF(text){
+    const out={ fornecedor:'', cnpj:'', data:'', valor:'' };
+    const mCNPJ = text.match(/(\d{2}[\.]?\d{3}[\.]?\d{3}[\/]?\d{4}[-\.]?\d{2})/);
+    if(mCNPJ) out.cnpj = mCNPJ[1];
+    const mData = text.match(/(\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b)/);
+    if(mData) out.data = mData[1];
+    const mVal = text.match(/R\$\s*([\d\.,]+)/i);
+    if(mVal) out.valor = mVal[1];
+    const line = text.split(/\n/).map(s=>s.trim()).find(s=>/^[A-Za-zÀ-ÿ0-9\s&\-\.\,]{5,}$/.test(s));
+    if(line) out.fornecedor = line;
+    return out;
+  }
+  el('#btnParse').onclick = ()=>{
+    const text = el('#freeText').value.trim();
+    if(!text){ alert('Coloque algum texto (OCR ou manual).'); return; }
+    if(mode==='pedido'){
+      const items = parsePedido(text);
+      el('#pedidoItens').innerHTML = items.map(it=>`• ${it.qtd?it.qtd+' ':''}${it.um?it.um+' ':''}${it.item}${it.extra? ' — ' + it.extra:''}`).join('<br>') || '—';
+    }else{
+      const info = parseNF(text);
+      if(info.fornecedor) el('#nfFornecedor').value = info.fornecedor;
+      if(info.cnpj) el('#nfCNPJ').value = info.cnpj;
+      if(info.data) el('#nfData').value = info.data;
+      if(info.valor) el('#nfValor').value = info.valor;
+    }
+  };
+
+  function buildMessage(){
+    const who = el('#waTo').value.trim();
+    if(mode==='pedido'){
+      const itens = el('#pedidoItens').innerHTML.replaceAll('<br>','\n') || '—';
+      const obs = el('#pedidoObs').value.trim();
+      return `*PEDIDO*${who?` — ${who}`:''}\n${new Date().toLocaleString()}\n\n${itens}\n${obs?`\nObs.: ${obs}`:''}`;
+    }else{
+      const f = el('#nfFornecedor').value.trim();
+      const c = el('#nfCNPJ').value.trim();
+      const d = el('#nfData').value.trim();
+      const v = el('#nfValor').value.trim();
+      return `*NF*${who?` — ${who}`:''}\n${new Date().toLocaleString()}\nFornecedor: ${f}\nCNPJ: ${c}\nData: ${d}\nValor: R$ ${v}`;
+    }
+  }
+  el('#btnWA').onclick = ()=>{
+    const url = `https://wa.me/?text=${encodeURIComponent(buildMessage())}`;
+    window.open(url, '_blank');
+  };
+
+  el('#btnSaveCSV').onclick = ()=>{
+    if(mode==='pedido'){
+      const linhas = el('#pedidoItens').innerHTML.replaceAll('<br>','\n').split('\n').filter(Boolean);
+      const csv = ['qtd;um;item;extra'];
+      for(const L of linhas){
+        const m = L.replace(/^•\s*/, '').match(/^(\d+[\.,]?\d*)\s*(\S+)?\s*(.*?)(?:\s—\s(.*))?$/);
+        if(m){ csv.push(`${m[1]||''};${m[2]||''};${(m[3]||'').replaceAll(';',',')};${(m[4]||'').replaceAll(';',',')}`); }
+      }
+      download(`pedido_${Date.now()}.csv`, csv.join('\n'));
+    }else{
+      const f = el('#nfFornecedor').value.trim();
+      const c = el('#nfCNPJ').value.trim();
+      const d = el('#nfData').value.trim();
+      const v = el('#nfValor').value.trim();
+      const csv = `fornecedor;cnpj;data;valor\n${f};${c};${d};${v}`;
+      download(`nf_${Date.now()}.csv`, csv);
+    }
+  };
+  function download(filename, text){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], {type:'text/plain'}));
+    a.download = filename; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 500);
+  }
+  el('#btnClear').onclick = ()=>{
+    el('#freeText').value=''; el('#pedidoItens').innerHTML='—';
+    ['nfFornecedor','nfCNPJ','nfData','nfValor','pedidoObs'].forEach(id=>{const x=el('#'+id); if(x) x.value='';});
+    el('#file').value=''; el('#previewBox').innerHTML='';
+  };
+  </script>
+</body>
+</html>
